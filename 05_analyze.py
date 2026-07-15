@@ -93,12 +93,32 @@ X_pca = pca.fit_transform(X_scaled)
 print("\n=== CHECKPOINT: PCA fit ===")
 print("explained variance ratio:", np.round(pca.explained_variance_ratio_, 4))
 
+# Descriptive cluster names derived from the mean profile above (cluster 0:
+# high grades but low STEM interest/first-choice split; cluster 1: highest
+# STEM interest+grades; cluster 2: lowest STEM grades, highest humanities/
+# arts/law interest) - used only as chart labels, not stored back to data.
+CLUSTER_NAMES = {
+    0: "Undecided Scientific",
+    1: "Confident Scientific",
+    2: "Humanities",
+}
+
 plt.figure(figsize=(8, 6))
-scatter = plt.scatter(X_pca[:, 0], X_pca[:, 1], c=df["cluster"], cmap="viridis", alpha=0.7)
+cmap = plt.get_cmap("viridis")
+n_clusters = df["cluster"].nunique()
+for cluster_id in sorted(df["cluster"].unique()):
+    mask = df["cluster"] == cluster_id
+    plt.scatter(
+        X_pca[mask, 0],
+        X_pca[mask, 1],
+        color=cmap(cluster_id / max(n_clusters - 1, 1)),
+        alpha=0.7,
+        label=CLUSTER_NAMES.get(cluster_id, f"Cluster {cluster_id}"),
+    )
 plt.xlabel(f"PC1 ({pca.explained_variance_ratio_[0]*100:.1f}% var)")
 plt.ylabel(f"PC2 ({pca.explained_variance_ratio_[1]*100:.1f}% var)")
 plt.title("Clusters projected onto first 2 principal components")
-plt.legend(*scatter.legend_elements(), title="Cluster")
+plt.legend(title="Cluster")
 plt.tight_layout()
 plt.savefig("pca_clusters.png", dpi=150)
 print("\nSaved pca_clusters.png")
@@ -146,16 +166,6 @@ FEATURE_LABELS_EN = {
     "هل يمكنك الدراسة في جامعة خاصة؟_encoded": "Can study in private university (encoded)",
 }
 
-# Descriptive cluster names derived from the mean profile above (cluster 0:
-# high grades but low STEM interest/first-choice split; cluster 1: highest
-# STEM interest+grades; cluster 2: lowest STEM grades, highest humanities/
-# arts/law interest) - used only as chart labels, not stored back to data.
-CLUSTER_NAMES = {
-    0: "Undecided Scientific",
-    1: "Confident Scientific",
-    2: "Humanities",
-}
-
 heatmap_data = scaled_profile.T
 heatmap_data.index = [FEATURE_LABELS_EN[c] for c in heatmap_data.index]
 heatmap_data.columns = [CLUSTER_NAMES[c] for c in heatmap_data.columns]
@@ -167,3 +177,29 @@ plt.xlabel("Cluster")
 plt.tight_layout()
 plt.savefig("cluster_heatmap.png", dpi=200)
 print("Saved cluster_heatmap.png")
+
+# --- Top-5 first-choice major per cluster (horizontal bar chart) ---
+# Uses MAJOR_MAP English names (not raw numeric codes) and CLUSTER_NAMES,
+# same as the validation printout above, so the chart reads standalone.
+mapped_first_choice = df[validation_cols["first_choice_major"]].map(MAJOR_MAP)
+cluster_top5 = {
+    cluster_id: mapped_first_choice[df["cluster"] == cluster_id].value_counts().head(5)
+    for cluster_id in sorted(df["cluster"].unique())
+}
+
+# Fixed color per major (not per rank) so the same major keeps the same
+# color across every cluster's subplot - identity, not position.
+MAJOR_PALETTE = ["#2a78d6", "#1baf7a", "#eda100", "#008300", "#4a3aa7", "#e34948", "#e87ba4", "#eb6834"]
+majors_seen = list(dict.fromkeys(m for top5 in cluster_top5.values() for m in top5.index))
+major_color = {major: MAJOR_PALETTE[i % len(MAJOR_PALETTE)] for i, major in enumerate(majors_seen)}
+
+fig, axes = plt.subplots(1, len(cluster_top5), figsize=(6 * len(cluster_top5), 5), sharex=True)
+for ax, (cluster_id, top5) in zip(axes, cluster_top5.items()):
+    top5_sorted = top5.sort_values()  # ascending so the largest bar lands on top
+    ax.barh(top5_sorted.index, top5_sorted.values, color=[major_color[m] for m in top5_sorted.index])
+    ax.set_title(CLUSTER_NAMES.get(cluster_id, f"Cluster {cluster_id}"))
+    ax.set_xlabel("Count")
+fig.suptitle("Top 5 first-choice majors per cluster")
+plt.tight_layout()
+plt.savefig("major_distribution.png", dpi=150)
+print("Saved major_distribution.png")
