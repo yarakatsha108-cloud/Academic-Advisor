@@ -1,0 +1,52 @@
+
+======================================================================
+WHY K-MEANS (K=3, reduced 20-feature set)
+======================================================================
+
+1. Best fit on this data: K-means silhouette (0.171) beats Ward
+   (0.114) and diagonal-covariance GMM (0.118). The PCA
+   scatter (pca_clusters.png) already showed roughly convex, similarly-
+   sized blobs rather than elongated or chain-like shapes - exactly the
+   geometry K-means's spherical-cluster assumption is suited to, and
+   exactly what tends to defeat Ward's variance-minimizing merges when
+   clusters overlap this much (Ward here collapsed to a 130/133/27 split,
+   visibly less balanced than K-means's 61/59/170).
+
+2. Most stable assignment, by far. Across 12 random seeds, K-means
+   reproduces the same grouping almost exactly (mean ARI 0.990,
+   std 0.010); GMM's EM is materially seed-sensitive
+   (mean ARI 0.820, std 0.238, one
+   run as low as 0.316 - a different local optimum,
+   not the same clustering). Across 20 bootstrap resamples
+   (leaving out 9% of students each time),
+   K-means barely moves (mean ARI 0.976) while Ward is
+   the least robust of the three (mean ARI 0.501) -
+   a handful of students can meaningfully change where Ward's early merges
+   happen, which then propagates up the whole tree.
+
+3. GMM's extra flexibility is a liability here, not an advantage. A
+   diagonal-covariance GMM already needs 20 variance parameters per
+   component; with ~290 students split three ways (~60-100 per cluster
+   on the smallest groups), that's not much data per parameter, which is
+   the likely cause of its seed sensitivity above. A full-covariance GMM
+   (210 parameters/component) would be substantially worse-conditioned
+   still.
+
+4. Structural fit for this specific system (independent of the numbers
+   above): recommend.py must classify ONE new student's answers in
+   real time, without ever refitting on the full dataset. K-means and GMM
+   both support this natively (predict() against fixed centroids/
+   component parameters is O(k) - trivial). Ward-linkage hierarchical
+   clustering has no native equivalent: assigning a new point either
+   requires re-running the entire agglomeration on old+new data (expensive,
+   and can change every existing student's cluster, not just the new
+   one) or a workaround like nearest-centroid-of-existing-cluster (which
+   is, at that point, just K-means through the back door). This alone
+   would rule Ward out for this API even if its silhouette/stability had
+   won.
+
+Conclusion: K-means is not just "the default we happened to pick" - on
+this dataset it has the best cluster structure by silhouette AND the most
+stable/reproducible assignment of the three algorithms tested, AND it is
+the only one of the three (tied with GMM) that fits how recommend.py
+actually needs to use it in production.

@@ -19,13 +19,14 @@ import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
-# Best K from stage 3's silhouette search. Note: on this dataset K=2 wins
-# by silhouette score, but the margin over K=3/K=7 is small (0.138 vs
-# 0.11-0.065) and all scores are low (<0.14), meaning cluster structure
-# in this feature space is weak overall - the students don't separate
-# into sharply distinct groups. Worth re-checking against domain
-# expectations (e.g. does a 2-way split actually differentiate majors
-# usefully) rather than trusting silhouette blindly.
+# Best K from stage 3's silhouette search (20-feature reduced set). K=2
+# wins by silhouette score (0.1976 vs K=3's 0.1705, K=4's 0.1111), but
+# that margin is small and all scores are low (<0.2), meaning cluster
+# structure in this feature space is weak overall - the students don't
+# separate into sharply distinct groups. We deliberately keep K=3 anyway:
+# a 2-way split collapses the Undecided-Scientific / Confident-Scientific
+# distinction that recommend.py's cluster-candidate logic depends on,
+# even though it would score higher on silhouette alone.
 BEST_K = 3
 
 X_scaled = np.load("X_scaled.npy")

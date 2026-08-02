@@ -1,0 +1,4 @@
+﻿algorithm,K,silhouette,seed_ARI_mean,seed_ARI_std,bootstrap_ARI_mean,bootstrap_ARI_std,supports_predict_on_new_point,notes
+K-means,3,0.1708,0.99,0.01,0.976,0.01,True,"Production choice - best silhouette, most stable across seeds and resamples, trivial O(k) predict() for a single new student (needed by recommend.py)."
+Ward (hierarchical),3,0.1143,,,0.501,0.177,False,Deterministic (no seed variance) but least robust to resampling; no native way to assign a brand-new point without re-running the whole linkage on old+new data.
+GMM (diagonal cov.),3,0.1183,0.82,0.238,0.812,0.228,True,Supports predict() but EM is seed-sensitive here (min seed ARI as low as 0.32) and less bootstrap-stable than K-means - 290 rows over 20 features is thin for fitting per-cluster variances reliably.

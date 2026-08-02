@@ -1,0 +1,9 @@
+﻿K,feature_set,n_features,silhouette,cluster_sizes,note
+2,Full (30 features),30,0.1378,"84, 206",Baseline (full feature set)
+3,Full (30 features),30,0.1142,"60, 167, 63",Production default
+4,Full (30 features),30,0.0638,"57, 101, 55, 77",Baseline (full feature set)
+5,Full (30 features),30,0.0638,"53, 72, 86, 40, 39",Baseline (full feature set)
+2,Reduced (20 features),20,0.1976,"209, 81",Silhouette improved vs. full set (+0.0598)
+3,Reduced (20 features),20,0.1705,"62, 169, 59",Silhouette improved vs. full set (+0.0563)
+4,Reduced (20 features),20,0.1111,"39, 74, 119, 58",Silhouette improved vs. full set (+0.0473)
+5,Reduced (20 features),20,0.1276,"38, 38, 59, 125, 30",Silhouette improved vs. full set (+0.0638)

@@ -1,7 +1,7 @@
 """
 Stage 5: Analyze and interpret clusters.
 
-- Mean profile per cluster uses the 30 raw/_encoded clustering columns
+- Mean profile per cluster uses the 20 raw/_encoded clustering columns
   (not the scaled array) so numbers are human-readable (e.g. actual
   grades 0-100, actual Likert 1-5) rather than z-scores.
 - Top-3 validation values per cluster come from data_with_clusters.csv's
@@ -42,7 +42,7 @@ print("nulls:", int(df.isnull().sum().sum()))
 assert len(df) == X_scaled.shape[0], "Row count mismatch between CSV and scaled array"
 
 # --- Mean profile per cluster (raw/_encoded units, human-readable) ---
-print("\n=== Mean profile per cluster (30 clustering features) ===")
+print("\n=== Mean profile per cluster (20 clustering features) ===")
 profile = df.groupby("cluster")[feature_columns].mean().round(2)
 print(profile.to_string())
 
@@ -93,14 +93,24 @@ X_pca = pca.fit_transform(X_scaled)
 print("\n=== CHECKPOINT: PCA fit ===")
 print("explained variance ratio:", np.round(pca.explained_variance_ratio_, 4))
 
-# Descriptive cluster names derived from the mean profile above (cluster 0:
-# high grades but low STEM interest/first-choice split; cluster 1: highest
-# STEM interest+grades; cluster 2: lowest STEM grades, highest humanities/
-# arts/law interest) - used only as chart labels, not stored back to data.
+# Descriptive cluster names derived from the mean profile above, re-verified
+# against this refit (20-feature reduced set - cluster IDs are arbitrary and
+# shifted vs. the old 30-feature run, do NOT assume the old {0,1,2} mapping
+# still holds):
+#   cluster 0: lowest STEM interest/grades, highest humanities/arts/law
+#     interest and "prefer theoretical study" -> Humanities.
+#   cluster 1: highest STEM interest AND highest STEM grades, highest
+#     "enjoy complex problems"/"handle academic pressure" -> Confident
+#     Scientific.
+#   cluster 2: decent-but-not-top STEM grades, near-neutral (mixed) STEM
+#     interest, still Medicine-leaning first choice but far less decisively
+#     than cluster 1, and distinguished mainly by uniformly high career-
+#     outcome priorities (income/status/passion/stability) -> Undecided
+#     Scientific.
 CLUSTER_NAMES = {
-    0: "Undecided Scientific",
+    0: "Humanities",
     1: "Confident Scientific",
-    2: "Humanities",
+    2: "Undecided Scientific",
 }
 
 plt.figure(figsize=(8, 6))
