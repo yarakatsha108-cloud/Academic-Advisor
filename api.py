@@ -25,7 +25,7 @@ FastAPI wrapper around the recommendation logic in recommend.py.
   new priority-boost tie-breakers and soft outside-city note.
 """
 
-from typing import Literal
+from typing import Literal, Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -112,7 +112,7 @@ class Evaluation(BaseModel):
 class YoutubeTeacher(BaseModel):
     teacher: str
     note: str
-    youtube: str | None = None
+    youtube: Optional[str] = None
 
 
 class ScheduleBlock(BaseModel):

@@ -7,14 +7,14 @@
 ## 0. الصورة الكاملة قبل ما نبلش
 
 ```
-Flutter  --(HTTP + Sanctum token)-->  Laravel  --(HTTP داخلي، بدون توكن)-->  Python (api.py)
+Flutter  --(HTTP + Sanctum token)-->  Laravel  --(HTTP داخلي، بدون توكن)-->  Python (07_api.py)
                                           |                                        |
                                           v                                        v
                                    قاعدة بيانات Laravel                    نفس المنطق الحالي
-                                (users, submissions)                    (recommend.py بدون تغيير)
+                                (users, submissions)                    (06_recommend.py بدون تغيير)
 ```
 
-Laravel هو الشي الوحيد اللي Flutter بيحكي معه. خدمة بايثون تضل شغالة محليًا (`127.0.0.1:8000`)، وLaravel هو اللي بيوصلها من الداخل. ما رح نلمس ولا سطر من `recommend.py` أو `api.py`.
+Laravel هو الشي الوحيد اللي Flutter بيحكي معه. خدمة بايثون تضل شغالة محليًا (`127.0.0.1:8000`)، وLaravel هو اللي بيوصلها من الداخل. ما رح نلمس ولا سطر من `06_recommend.py` أو `07_api.py`.
 
 ---
 
@@ -26,7 +26,7 @@ Laravel هو الشي الوحيد اللي Flutter بيحكي معه. خدمة 
 | Composer | يركّب مكتبات Laravel | `composer -V` |
 | SQLite (مدمج بـ PHP عادةً) | قاعدة بيانات بسيطة، صفر إعداد سيرفر | ما محتاج تركيب منفصل غالبًا |
 | Postman أو curl | لتجربة كل endpoint يدويًا | أي وحدة فيهم تكفي |
-| خدمة بايثون (api.py) شغّالة | Laravel رح يتصل فيها | `uvicorn api:app --port 8000` بترمينال منفصل |
+| خدمة بايثون (07_api.py) شغّالة | Laravel رح يتصل فيها | `uvicorn 07_api:app --port 8000` بترمينال منفصل |
 
 لو `php -v` ما اشتغل، لازم تركّب PHP أول (على ويندوز أسهل طريقة عبر [Laravel Herd](https://herd.laravel.com) - بيجيب PHP وComposer سوا بتثبيت واحد).
 
@@ -376,7 +376,7 @@ class StoreSubmissionRequest extends FormRequest
 }
 ```
 
-**ملاحظة حرجة جدًا:** أسماء الحقول هون (`interest_math`, `math_grade`, إلخ) هي **بالضبط** نفس أسماء `StudentRequest` بملف `api.py` عندك - نسختها منه حرفيًا. **لا تغيّر ولا اسم حقل واحد هون** حتى لو حابب تسميه شي تاني - أي فرق بالاسم رح يخلي خدمة بايثون ترفض الطلب بخطأ 422 مو مفهوم السبب. لو ضفتوا لاحقًا حقل جديد بـ api.py، لازم تضيفوه هون كمان بنفس الاسم بالضبط.
+**ملاحظة حرجة جدًا:** أسماء الحقول هون (`interest_math`, `math_grade`, إلخ) هي **بالضبط** نفس أسماء `StudentRequest` بملف `07_api.py` عندك - نسختها منه حرفيًا. **لا تغيّر ولا اسم حقل واحد هون** حتى لو حابب تسميه شي تاني - أي فرق بالاسم رح يخلي خدمة بايثون ترفض الطلب بخطأ 422 مو مفهوم السبب. لو ضفتوا لاحقًا حقل جديد بـ 07_api.py، لازم تضيفوه هون كمان بنفس الاسم بالضبط.
 
 ---
 
@@ -514,7 +514,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
 **ترمينال 1 (خدمة بايثون - من مجلد المشروع الأصلي):**
 ```bash
-uvicorn api:app --reload --port 8000
+uvicorn 07_api:app --reload --port 8000
 ```
 
 **ترمينال 2 (Laravel - من مجلد recommendation-backend):**
@@ -591,12 +591,12 @@ curl http://127.0.0.1:8001/api/recommend/history \
 
 ```
 المطلوب: باك اند Laravel كامل يشتغل كـ "بوابة" (gateway) قدام خدمة Python موجودة
-مسبقًا وشغّالة ومختبرة (FastAPI على api.py) - بدون أي تعديل على خدمة Python.
+مسبقًا وشغّالة ومختبرة (FastAPI على 07_api.py) - بدون أي تعديل على خدمة Python.
 
 السياق:
 - عندي خدمة Python (FastAPI) شغّالة محليًا على http://127.0.0.1:8000، فيها نقطة
   POST /recommend بتاخد JSON فيه إجابات طالب على استبيان (شوف الملف المرفق
-  api.py لمعرفة الحقول بالضبط: StudentRequest و RecommendResponse) وترجع
+  07_api.py لمعرفة الحقول بالضبط: StudentRequest و RecommendResponse) وترجع
   توصية تخصص جامعي كاملة.
 - الفرونت إند Flutter، وفيه واجهة تسجيل دخول + واجهة تعبئة استبيان جاهزتين
   عند التيم، بيحتاجوا Laravel API حقيقي يتواصلوا معه.
@@ -621,7 +621,7 @@ curl http://127.0.0.1:8001/api/recommend/history \
 3. RecommendController (محمي بـ Sanctum middleware):
    - POST /api/recommend:
      a. تحقق (Form Request validation) من كل حقول StudentRequest كما هي بالضبط
-        بـ api.py (نفس الأسماء، نفس القيود ge/le) - لا تُعِد تسمية أي حقل.
+        بـ 07_api.py (نفس الأسماء، نفس القيود ge/le) - لا تُعِد تسمية أي حقل.
      b. أرسل نفس الـ payload عبر Http::post() لـ
         config('services.recommend.url') . '/recommend' (اقرأ الرابط من .env
         عبر config/services.php، لا تكتبه ثابتًا بالكود).
@@ -638,7 +638,7 @@ curl http://127.0.0.1:8001/api/recommend/history \
    - اضبط timeout معقول (5-10 ثواني) لطلبات Http:: الداخلية.
 
 5. لا تلمس أبدًا:
-   - أي ملف Python (recommend.py، api.py، أو نماذج .pkl).
+   - أي ملف Python (06_recommend.py، 07_api.py، أو نماذج .pkl).
    - أسماء حقول StudentRequest/RecommendResponse - Laravel ناقل وحافظ بيانات
      فقط، مو طبقة إعادة صياغة.
 
@@ -650,3 +650,66 @@ curl http://127.0.0.1:8001/api/recommend/history \
 ```
 
 > **ملاحظة صغيرة:** عدّلت سطر واحد بالبرومبت عن نسخته الأصلية اللي انكتبت بالمحادثة (استبدلت `env('RECOMMEND_SERVICE_URL')` بـ `config('services.recommend.url')`) عشان يبقى متسق مع شرح القسم 9 فوق - نفس الفكرة بالضبط، بس الطريقة الصح لقراءة إعدادات بـ Laravel.
+
+---
+
+## 14. ملحق 2 - تحويل حقول الفرونت إند (39 حقل) لحقول خدمة الذكاء الاصطناعي (27 حقل)
+
+الفرونت إند (Flutter) بيبعت 39 حقل بأسماء خاصة فيه (مثلاً `mark_math`)، بينما خدمة بايثون بتتوقع 27 حقل بأسماء مختلفة (`math_grade`). القرار: **Laravel هو اللي بيترجم**، الفرونت إند ما بيتغيّر.
+
+الحل: array تحويل واحد، مكانه الطبيعي جوا `RecommendController`، قبل ما نبعت أي شي لخدمة بايثون.
+
+```php
+// أضف بأعلى RecommendController.php (بعد namespace/use statements)
+
+/**
+ * تحويل من أسماء حقول الفرونت إند (39 حقل) لأسماء StudentRequest
+ * بخدمة بايثون (27 حقل بالضبط). المفتاح = اسم الفرونت إند،
+ * القيمة = الاسم المتوقع بـ api.py.
+ *
+ * عدّل القيم اليسار (الفرونت إند) لتطابق أسماءكم الفعلية - القيم
+ * اليمين (خدمة بايثون) ثابتة، منسوخة حرفيًا من StudentRequest.
+ */
+private const FIELD_MAP = [
+    'mark_math' => 'math_grade',
+    'mark_physics' => 'physics_grade',
+    'mark_chemistry' => 'chemistry_grade',
+    'mark_arabic' => 'arabic_grade',
+    'mark_foreign_language' => 'foreign_language_grade',
+    // ... باقي الـ22 حقل، بنفس النمط: 'اسم_الفرونت' => 'اسم_بايثون'
+    // (القائمة الكاملة الـ27 موجودة بقسم 8 فوق - StoreSubmissionRequest)
+];
+```
+
+وبدالة `store()`، قبل التحقق (validation)، حوّل الطلب الوارد أول:
+
+```php
+public function store(Request $request)
+{
+    // 1) حوّل أسماء الحقول من صيغة الفرونت إند لصيغة خدمة بايثون
+    $mapped = [];
+    foreach (self::FIELD_MAP as $frontendKey => $pythonKey) {
+        if ($request->has($frontendKey)) {
+            $mapped[$pythonKey] = $request->input($frontendKey);
+        }
+    }
+
+    // 2) الآن مرّر $mapped (مو $request->all()) لـ StoreSubmissionRequest
+    //    للتحقق - نفس القواعد المكتوبة بقسم 8 بالضبط، بدون أي تغيير عليها
+    $validator = \Validator::make($mapped, (new StoreSubmissionRequest())->rules());
+
+    if ($validator->fails()) {
+        return response()->json(['errors' => $validator->errors()], 422);
+    }
+
+    $payload = $validator->validated();
+
+    // 3) من هون وطالع، نفس كود القسم 9 بالضبط (Http::post مع $payload)
+    // ...
+}
+```
+
+**نقاط مهمة:**
+- أي حقل من الـ39 مش موجود بـ `FIELD_MAP` (يعني من الـ12 الزيادة) **ببساطة بينرمى ولا بيوصل لخدمة بايثون** - مو خطأ، هيك المفروض بالضبط.
+- لو حابين تحتفظوا بالـ39 حقل الأصلية كاملة بقاعدة البيانات (submissions) لغرض تاني بالمستقبل، خزّنوا `$request->all()` بعمود `student_answers` بدل `$mapped` - القرار إلكم، ما بأثر على أي شي عملي.
+- لو تغيّر اسم حقل بأي طرف (فرونت إند أو بايثون) بالمستقبل، المكان الوحيد اللي لازم تعدّلوه هو `FIELD_MAP` - كل شي تاني بالكود ما بيتغيّر.
