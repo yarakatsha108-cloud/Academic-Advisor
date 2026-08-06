@@ -157,12 +157,19 @@ CLUSTER_CANDIDATES = {
 #     university estimate (~80-85%) as the closest available proxy -> 82.
 #     LOWER CONFIDENCE than Medicine/Engineering - flag if you find a
 #     better source.
-#   - Economics: UNCHANGED at 60 for now. A number was found (literary
-#     institutes bucket covering media/tourism/management/economics
-#     together, ~1000-1200/2400 = 41.7%-50%), but it's not clearly the
-#     actual "كلية الاقتصاد" college-level cutoff (could be a lower
-#     institute/diploma tier) - not confident enough to replace 60 with
-#     it. Needs a better source before updating.
+#   - Economics: UPDATED from the old unsourced 60 to 70. User supplied the
+#     actual 2025-2026 Damascus University "كلية الاقتصاد" مفاضلة cutoff
+#     directly: 1550/2200 for التعليم العام (general track) - the figure
+#     used here, matching how the other majors above use the general-track
+#     number, not موازي (parallel/paid track, 1450/2200, lower bar) - and
+#     1550/2200 = 70.5% -> 70. This is a real, specific, named-university
+#     figure (not a range/estimate like Engineering/Computer Science
+#     above), so confidence here is actually HIGH, despite being the last
+#     one updated. Note: this denominator is out of 2200, not 2400 like
+#     Medicine/Engineering above - Syrian baccalaureate total points differ
+#     by branch/subject count (literary vs scientific), so the two are not
+#     directly comparable in raw points, only after converting to %, which
+#     is what's done here.
 GRADE_REQUIREMENTS = {
     "Medicine": ("total_avg (5 subjects)/5", 92),
     "Engineering": ("total_avg (5 subjects)/5", 83),
@@ -173,7 +180,7 @@ GRADE_REQUIREMENTS = {
     # not the grade requirement.
     "Architecture": ("total_avg (5 subjects)/5", 83),
     "Computer Science": ("total_avg (5 subjects)/5", 82),
-    "Economics": ("total_avg (5 subjects)/5", 60),
+    "Economics": ("total_avg (5 subjects)/5", 70),
 }
 
 # A grade up to this many points below the threshold is "borderline" -
