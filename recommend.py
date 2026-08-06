@@ -67,6 +67,22 @@ Recommend majors for a new student using the saved clustering model.
   the return value is repurposed from the old "which major got moved to
   front" list into a full explanation of the final order (interest score +
   grade margin per major, in rank order) - see _ranking_explanations.
+
+- ADDED: total_avg (replacing the old 3-subject science_avg as the metric
+  GRADE_REQUIREMENTS actually gates on - science_avg is now informational
+  only) is now branch-conditional, not a flat 5-subject average - see
+  _total_avg_subjects/_compute_total_avg. Literary branch (academic_branch
+  == 2) averages only math/arabic/foreign_language (3 subjects); every
+  other branch still averages all 5. Reason: Literary students don't
+  study physics/chemistry in the real Syrian curriculum, and the training
+  data confirms this structurally (~42% of Literary rows have BOTH
+  physics=0 AND chemistry=0 - a "not applicable" placeholder, not a real
+  failing grade) - averaging those zeros in would silently crush a
+  Literary student's total_avg on subjects they never sat for. The same
+  branch-aware subject set now also scopes
+  identify_subjects_needing_attention() and build_weekly_schedule() - a
+  Literary student is never flagged as "weak in physics" or scheduled a
+  physics study block, for the same reason.
 """
 
 import math
@@ -134,16 +150,20 @@ CLUSTER_CANDIDATES = {
 # Law/Humanities/Languages/Arts have no grade requirement and are absent
 # here.
 #
-# UPDATED to use total_avg (all 5 collected subjects: math, physics,
-# chemistry, arabic, foreign language) instead of the old science_avg
-# (math+physics+chemistry only) or bare math_grade. Real Syrian university
-# admission ("مفاضلة") is decided by a student's TOTAL baccalaureate score
-# across ALL subjects (out of 2400), not an isolated 2-3 subject slice -
+# UPDATED to use total_avg (the collected subjects that are actually part
+# of the student's curriculum: see _total_avg_subjects below - 5 subjects
+# for most branches, 3 for Literary since physics/chemistry aren't studied
+# there) instead of the old science_avg (math+physics+chemistry only) or
+# bare math_grade. Real Syrian university admission ("مفاضلة") is decided
+# by a student's TOTAL baccalaureate score across ALL subjects they
+# actually sat for (out of 2400), not an isolated 2-3 subject slice -
 # using only science_avg was a structural mismatch with how admission
 # actually works, not just a threshold-value problem. This survey still
-# only collects 5 of the ~12 real bakalorya subjects, so total_avg (5
-# subjects) is the closest available approximation of the real total, not
-# an exact match.
+# only collects 5 of the ~12 real bakalorya subjects, so total_avg is the
+# closest available approximation of the real total, not an exact match.
+# The label is just "total_avg" now (dropped the literal "(5 subjects)/5"
+# from earlier) since the subject count itself now varies by branch - see
+# _total_avg_subjects/_compute_total_avg below.
 #
 # Thresholds sourced from 2025-2026 Syrian admission data (see chat -
 # search results, sy-24.com / toiall.com / elnatiga.com), converted from
@@ -171,16 +191,16 @@ CLUSTER_CANDIDATES = {
 #     directly comparable in raw points, only after converting to %, which
 #     is what's done here.
 GRADE_REQUIREMENTS = {
-    "Medicine": ("total_avg (5 subjects)/5", 92),
-    "Engineering": ("total_avg (5 subjects)/5", 83),
+    "Medicine": ("total_avg", 92),
+    "Engineering": ("total_avg", 83),
     # Architecture reuses Engineering's threshold rather than a separate
     # invented number - same rationale as before, just against the new
     # real Engineering figure. What actually distinguishes Architecture
     # from Engineering is the interest gate below (MAJOR_INTEREST_FIELDS),
     # not the grade requirement.
-    "Architecture": ("total_avg (5 subjects)/5", 83),
-    "Computer Science": ("total_avg (5 subjects)/5", 82),
-    "Economics": ("total_avg (5 subjects)/5", 70),
+    "Architecture": ("total_avg", 83),
+    "Computer Science": ("total_avg", 82),
+    "Economics": ("total_avg", 70),
 }
 
 # A grade up to this many points below the threshold is "borderline" -
@@ -233,25 +253,44 @@ MAJOR_INTEREST_FIELDS = {
     "Arts": ["interest_arts"],
 }
 
-# Short display label for each grade-requirement metric (GRADE_REQUIREMENTS
-# keys use the full formula for the "excluded" reason text; the aspiration
-# report is more compact).
-SHORT_METRIC_LABEL = {
-    "total_avg (5 subjects)/5": "total_avg",
-}
-
-# Reverse of SHORT_METRIC_LABEL, but pointing to which raw subject columns
-# feed each aspiration-major metric. Used to flag "this subject is holding
-# back an aspiration major" even when the subject's own grade is above
-# WEAK_GRADE_THRESHOLD - e.g. physics=65 isn't "weak" on its own, but if
-# it's part of a total_avg that's blocking an aspiration major, it's still
-# worth flagging. Now covers all 5 subjects (was just the 3 science ones)
-# since total_avg is computed from all 5.
-SHORT_METRIC_TO_SUBJECTS = {
-    "total_avg": {"math_grade", "physics_grade", "chemistry_grade", "arabic_grade", "foreign_language_grade"},
-}
-
 BRANCH_NAMES = {1: "Scientific", 2: "Literary", 3: "Commercial", 4: "Vocational", 5: "Industrial"}
+
+
+def _total_avg_subjects(academic_branch):
+    """Which of the 5 collected grade subjects actually feed total_avg for
+    a given academic_branch - NOT always all 5. Literary branch (2)
+    doesn't study physics/chemistry in the real Syrian curriculum, and the
+    real survey data confirms this structurally, not just anecdotally:
+    ~42% of literary-branch rows (16 of 38) have BOTH physics=0 AND
+    chemistry=0 - a placeholder for "not studied", not a genuine failing
+    grade. Averaging those zeros into total_avg would silently crush a
+    literary student's score on subjects they never sat for, making
+    Economics (the one literary-accessible major with a real grade
+    requirement) look unreachable when it may not be.
+    Branches 4/5 (Vocational/Industrial) still include all 5 subjects -
+    whether they skip physics/chemistry too isn't confirmed one way or
+    the other, and the sample for them is too thin (9 and 1 students,
+    respectively, in the training data) to infer a reliable pattern from -
+    left as-is until there's a real source, rather than guessing.
+    """
+    if academic_branch == 2:
+        return ["math_grade", "arabic_grade", "foreign_language_grade"]
+    return ["math_grade", "physics_grade", "chemistry_grade", "arabic_grade", "foreign_language_grade"]
+
+
+def _compute_total_avg(math_grade, physics_grade, chemistry_grade, arabic_grade, foreign_language_grade, academic_branch):
+    """Average of only the subjects _total_avg_subjects says are actually
+    part of `academic_branch`'s curriculum - see that function for why
+    this isn't always a flat 5-subject average."""
+    grade_by_subject = {
+        "math_grade": math_grade,
+        "physics_grade": physics_grade,
+        "chemistry_grade": chemistry_grade,
+        "arabic_grade": arabic_grade,
+        "foreign_language_grade": foreign_language_grade,
+    }
+    subjects = _total_avg_subjects(academic_branch)
+    return sum(grade_by_subject[s] for s in subjects) / len(subjects)
 
 # exam_stage controls whether "improve your grade" advice makes sense at
 # all. aspiration_majors/youtube_suggestions/study_schedule all implicitly
@@ -333,41 +372,46 @@ def identify_weak_subjects(student_answers):
     return {subj: grade for subj, grade in grades.items() if grade < WEAK_GRADE_THRESHOLD}
 
 
-def identify_subjects_needing_attention(student_answers, aspiration_majors):
+def identify_subjects_needing_attention(student_answers, aspiration_majors, academic_branch):
     """Combines two independent reasons a subject deserves youtube
     suggestions / extra schedule weight:
       - "below_threshold": grade < WEAK_GRADE_THRESHOLD, regardless of
         whether any major needs it (generic "could use support").
-      - "aspiration_target": the subject feeds the metric of an
-        aspiration_major (e.g. math/physics/chemistry for a science_avg-
-        gated aspiration like Medicine/Engineering), even if the grade
-        itself is >= WEAK_GRADE_THRESHOLD - it's still what's standing
-        between the student and that major.
-    A subject hit by both gets reason "both". Returns
-    {subject_key: {"grade": float, "reason": str}}; empty dict means the
-    student has nothing below the generic threshold AND every candidate
-    major is already matched (no aspiration gap to close) - genuinely
-    nothing to recommend.
+      - "aspiration_target": the subject feeds total_avg, which is what's
+        blocking an aspiration_major (e.g. math/physics/chemistry/arabic/
+        foreign_language for a total_avg-gated aspiration like Medicine/
+        Engineering), even if the grade itself is >= WEAK_GRADE_THRESHOLD -
+        it's still what's standing between the student and that major.
+    A subject hit by both gets reason "both".
+
+    Only considers subjects _total_avg_subjects(academic_branch) says are
+    actually part of the student's curriculum - e.g. a Literary-branch
+    student is never flagged (either reason) for physics/chemistry, since
+    they don't study those subjects and a 0 there is a "not applicable"
+    placeholder, not a real weak grade (see _total_avg_subjects for why).
+
+    Returns {subject_key: {"grade": float, "reason": str}}; empty dict
+    means the student has nothing below the generic threshold AND every
+    candidate major is already matched (no aspiration gap to close) -
+    genuinely nothing to recommend.
     """
+    relevant_subjects = _total_avg_subjects(academic_branch)
     grades = {
         subj: student_answers[FRIENDLY_TO_COLUMN[subj]]
-        for subj in SUBJECT_DISPLAY_NAMES
+        for subj in relevant_subjects
     }
     attention = {}
     for subj, grade in grades.items():
         if grade < WEAK_GRADE_THRESHOLD:
             attention[subj] = {"grade": grade, "reason": "below_threshold"}
-    for item in aspiration_majors:
-        for subj in SHORT_METRIC_TO_SUBJECTS.get(item["metric_label"], set()):
+    # Every aspiration_major is gated by the same metric (total_avg - see
+    # GRADE_REQUIREMENTS), so any aspiration major at all means every
+    # relevant_subjects entry is a target; no need to loop per-item.
+    if aspiration_majors:
+        for subj in relevant_subjects:
             if subj not in attention:
                 attention[subj] = {"grade": grades[subj], "reason": "aspiration_target"}
-            elif attention[subj]["reason"] == "below_threshold":
-                # Only upgrade to "both" the first time - if a LATER
-                # aspiration major (e.g. Medicine after Engineering, both
-                # science_avg-gated) touches the same subject again, it's
-                # already "aspiration_target"/"both" and must not be
-                # re-processed, or two aspiration majors sharing a metric
-                # would incorrectly look like "both" reasons.
+            else:
                 attention[subj]["reason"] = "both"
     return attention
 
@@ -392,7 +436,10 @@ def build_youtube_suggestions(attention_subjects):
 #     review block each), Friday-Saturday is the weekend (two longer
 #     blocks each, for new material + practice).
 #   - Total weekly study capacity in this plan: 9 blocks x 2h = 18h.
-#   - Every one of the 5 core subjects gets at least 1 weekly block, even
+#   - Every one of the student's relevant subjects (_total_avg_subjects -
+#     3 for Literary branch, 5 otherwise; a Literary student is never
+#     scheduled physics/chemistry blocks, since they don't study those -
+#     see _total_avg_subjects for why) gets at least 1 weekly block, even
 #     if not weak, so review doesn't fully drop off; weak subjects get
 #     extra blocks proportional to how far below WEAK_GRADE_THRESHOLD
 #     they are.
@@ -456,13 +503,21 @@ def _allocate_blocks(weights, total_blocks):
     return alloc
 
 
-def build_weekly_schedule(student_answers, attention_subjects):
+def build_weekly_schedule(student_answers, attention_subjects, academic_branch):
     """Builds a day-by-day weekly study schedule, weighted toward
     attention_subjects (see identify_subjects_needing_attention). If
     attention_subjects is empty - nothing below WEAK_GRADE_THRESHOLD and
     every candidate major already matched - returns a light 2-block
     "maintenance" plan instead of forcing the full 9-block corrective one
-    on a student who doesn't need it."""
+    on a student who doesn't need it.
+
+    Only schedules blocks for _total_avg_subjects(academic_branch) - a
+    Literary-branch student never gets physics/chemistry blocks (they
+    don't study those subjects; see _total_avg_subjects). Without this,
+    a Literary student's physics=0/chemistry=0 "not applicable" placeholder
+    grades would look like severe weaknesses (weight formula below adds up
+    to +6.5 for a grade of 0) and hijack most of the weekly plan with
+    study blocks for subjects they don't even take."""
     if not attention_subjects:
         schedule_by_day = {day: [] for day in SCHOOL_DAYS + WEEKEND_DAYS}
         for day, time_range, hours in MAINTENANCE_BLOCKS:
@@ -485,7 +540,7 @@ def build_weekly_schedule(student_answers, attention_subjects):
 
     grades = {
         subj: student_answers[FRIENDLY_TO_COLUMN[subj]]
-        for subj in SUBJECT_DISPLAY_NAMES
+        for subj in _total_avg_subjects(academic_branch)
     }
     weights = _compute_subject_weights(grades, attention_subjects)
 
@@ -751,16 +806,21 @@ def recommend_majors(
     arabic_grade = student_answers[FRIENDLY_TO_COLUMN["arabic_grade"]]
     foreign_language_grade = student_answers[FRIENDLY_TO_COLUMN["foreign_language_grade"]]
     # science_avg kept as an informational/display figure only (see the
-    # returned dict) - total_avg (all 5 collected subjects) is what
-    # actually drives GRADE_REQUIREMENTS now, since real Syrian admission
-    # is decided by the TOTAL baccalaureate score, not a 3-subject slice -
-    # see the note above GRADE_REQUIREMENTS.
+    # returned dict), always the flat math+physics+chemistry average
+    # regardless of branch - total_avg (below) is what actually drives
+    # GRADE_REQUIREMENTS now, since real Syrian admission is decided by
+    # the TOTAL baccalaureate score across only the subjects a student
+    # actually studies - see the note above GRADE_REQUIREMENTS and
+    # _total_avg_subjects for why this is branch-conditional (3 subjects
+    # for Literary, 5 otherwise).
     science_avg = (math_grade + physics_grade + chemistry_grade) / 3
-    total_avg = (math_grade + physics_grade + chemistry_grade + arabic_grade + foreign_language_grade) / 5
+    total_avg = _compute_total_avg(
+        math_grade, physics_grade, chemistry_grade, arabic_grade, foreign_language_grade, academic_branch
+    )
     can_study_private = can_study_private_university_encoded
 
     metric_values = {
-        "total_avg (5 subjects)/5": total_avg,
+        "total_avg": total_avg,
     }
 
     matched_majors = []
@@ -817,7 +877,7 @@ def recommend_majors(
             aspiration_majors.append(
                 {
                     "major": major,
-                    "metric_label": SHORT_METRIC_LABEL[label],
+                    "metric_label": label,
                     "current": round(value, 1),
                     "threshold": threshold,
                     "gap": round(gap, 1),
@@ -879,9 +939,9 @@ def recommend_majors(
         # Computed AFTER aspiration_majors so a subject can be flagged for
         # advice either because its own grade is weak, or because it's
         # what's standing between the student and an aspiration major.
-        attention_subjects = identify_subjects_needing_attention(student_answers, aspiration_majors)
+        attention_subjects = identify_subjects_needing_attention(student_answers, aspiration_majors, academic_branch)
         youtube_suggestions = build_youtube_suggestions(attention_subjects)
-        study_schedule = build_weekly_schedule(student_answers, attention_subjects)
+        study_schedule = build_weekly_schedule(student_answers, attention_subjects, academic_branch)
     else:
         # exam_stage == "final" - aspiration_majors is always empty here
         # (see the loop above), and there's nothing left to advise on:
@@ -982,7 +1042,8 @@ def print_report(label, profile, academic_branch, result):
           f"can_study_outside_city: {profile['can_study_outside_city']}")
 
     print(f"\nAssigned cluster: {result['cluster']} ({result['cluster_name']})  |  exam_stage: {result['exam_stage']}")
-    print(f"total_avg (5 subjects, drives eligibility) = {result['total_avg']}  |  "
+    n_subjects = len(_total_avg_subjects(academic_branch))
+    print(f"total_avg ({n_subjects} subjects, drives eligibility) = {result['total_avg']}  |  "
           f"science_avg (3 subjects, informational only) = {result['science_avg']}")
 
     print("\nCandidate evaluation:")
