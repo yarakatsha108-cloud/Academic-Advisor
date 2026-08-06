@@ -22,9 +22,10 @@ Recommend majors for a new student using the saved clustering model.
   they're now explicit recommend_majors() parameters instead of clustering
   inputs: can_study_private_university_encoded (hard Arts eligibility
   gate - unchanged), can_study_outside_city (soft advisory note),
-  interest_programming/interest_languages/prefer_people_over_computer
-  (priority-boost tie-breakers within a cluster's candidate majors). See
-  the "Priority-boost tie-breakers" section below.
+  interest_programming/interest_languages (used to RANK Computer
+  Science/Languages - see MAJOR_INTEREST_FIELDS and _rank_majors below)
+  and prefer_people_over_computer (now vestigial - see the note above
+  _rank_majors).
 
 - ADDED: youtube_suggestions (curated teacher/channel suggestions) and
   study_schedule (a weighted weekly study-time planner) - both advisory
@@ -38,6 +39,34 @@ Recommend majors for a new student using the saved clustering model.
   aspiration major to close - study_schedule falls back to a light
   "maintenance" plan instead of forcing a full corrective one on someone
   who doesn't need it, and youtube_suggestions is empty.
+
+- ADDED: two new candidate majors, "Architecture" and "Languages", and
+  BOTH scientific clusters (1, 2) now also offer every Humanities-cluster
+  major (Law/Humanities/Languages/Economics/Arts) as a candidate, not just
+  Law - see CLUSTER_CANDIDATES/GRADE_REQUIREMENTS below.
+- ADDED then REMOVED: a hard interest-based eligibility gate (excluding a
+  major outright if its interest score fell below a fixed cutoff, tried at
+  both 4 and 3). Deliberately reverted - the goal is to help students
+  whose interest is fairly low across THE BOARD too, and a fixed cutoff
+  meant a student with nothing above e.g. 3 anywhere could get an empty
+  result, which defeats the point of a recommendation tool. Eligibility
+  (matched_majors/aspiration_majors) is grade+branch ONLY, same as
+  originally.
+- ADDED: MAJOR_INTEREST_FIELDS + _rank_majors/_ranking_explanations -
+  interest now drives ORDER instead: every major that passes grade+branch
+  is ranked by whichever interest score is comparatively HIGHEST for that
+  specific student (Medicine/Engineering/Architecture/Law/Humanities/
+  Economics/Arts via student_answers, Computer Science/Languages via the
+  interest_programming/interest_languages signal parameters), even if that
+  highest score is itself low - "most genuinely drawn to, relative to
+  their own other options" rather than "clears some absolute bar". Grade
+  margin (how comfortably a major's threshold is cleared) is used ONLY to
+  break ties between majors with an identical interest score - see the
+  module note above _rank_majors for why grade is never a co-equal factor
+  (different numeric scale, would silently dominate). `priority_boosts` in
+  the return value is repurposed from the old "which major got moved to
+  front" list into a full explanation of the final order (interest score +
+  grade margin per major, in rank order) - see _ranking_explanations.
 """
 
 import math
@@ -96,16 +125,23 @@ CLUSTER_NAMES = {
 }
 
 CLUSTER_CANDIDATES = {
-    2: ["Medicine", "Engineering", "Computer Science", "Law"],
-    1: ["Medicine", "Engineering", "Computer Science"],
-    0: ["Law", "Humanities", "Economics", "Arts"],
+    2: ["Medicine", "Engineering", "Architecture", "Computer Science", "Law", "Humanities", "Languages", "Economics", "Arts"],
+    1: ["Medicine", "Engineering", "Architecture", "Computer Science", "Law", "Humanities", "Languages", "Economics", "Arts"],
+    0: ["Law", "Humanities", "Languages", "Economics", "Arts"],
 }
 
 # (requirement label, threshold) - checked against science_avg or math_grade
-# below. Law/Humanities/Arts have no grade requirement and are absent here.
+# below. Law/Humanities/Languages/Arts have no grade requirement and are
+# absent here.
 GRADE_REQUIREMENTS = {
     "Medicine": ("science_avg (math+physics+chemistry)/3", 80),
     "Engineering": ("science_avg (math+physics+chemistry)/3", 75),
+    # Architecture reuses Engineering's exact threshold (75) rather than a
+    # separate invented number - no real Syrian admission data exists here
+    # to justify a different cutoff. What actually distinguishes Architecture
+    # from Engineering is the interest gate below (MAJOR_INTEREST_FIELDS),
+    # not the grade requirement.
+    "Architecture": ("science_avg (math+physics+chemistry)/3", 75),
     "Computer Science": ("math grade", 70),
     "Economics": ("math grade", 60),
 }
@@ -119,6 +155,46 @@ BORDERLINE_MARGIN = 5
 # being dropped outright (a hard constraint miss - branch/private - is
 # never an aspiration major, regardless of grade).
 ASPIRATION_MARGIN = 15
+
+# Only the top N ranked majors (see _rank_majors) are shown per list -
+# matched_majors and aspiration_majors are each capped separately, so a
+# student can see up to 3 matched AND up to 3 aspiration majors, not 3
+# total. A student doesn't need all 9 candidates listed, just their best
+# few - evaluations still carries the full trace of everyone considered,
+# this only trims what's surfaced as THE recommendation.
+MAX_DISPLAYED_MAJORS = 3
+
+# Which student_answers interest field(s) represent each major, for
+# RANKING purposes only (_rank_majors/_ranking_explanations below) - NOT
+# an eligibility gate. There used to be a hard cutoff here (a major was
+# excluded outright if its interest score fell below a fixed number, 3 or
+# 4) - deliberately removed: the goal is to help students whose interest
+# is fairly low across THE BOARD too, and a fixed cutoff meant a student
+# with no strong pull toward anything (nothing above e.g. 3) could see an
+# empty result, which defeats the point. Instead, every major that passes
+# grade+branch is shown, and ranked by whichever interest score is
+# comparatively HIGHEST for that student - even if the highest one is
+# itself just a 2. Architecture's score is the MINIMUM of its two fields,
+# not their average - Architecture genuinely needs both the engineering
+# aptitude AND the design/art inclination together, so a strong
+# interest_physics_engineering should NOT be able to mask a weak
+# interest_arts (a 5+2 student is not equivalent to a 4+3 student just
+# because they average to the same 3.5 - the 4+3 student is the actually
+# better fit, and min() reflects that; average() would hide it). "Computer
+# Science" and
+# "Languages" are deliberately absent from this dict - they're scored from
+# interest_programming/interest_languages, which are recommend_majors()
+# SIGNAL parameters, not student_answers fields (see module docstring) -
+# handled as a special case in _major_interest_score below.
+MAJOR_INTEREST_FIELDS = {
+    "Medicine": ["interest_medicine"],
+    "Engineering": ["interest_physics_engineering"],
+    "Architecture": ["interest_physics_engineering", "interest_arts"],
+    "Law": ["interest_law"],
+    "Humanities": ["interest_humanities"],
+    "Economics": ["interest_economics"],
+    "Arts": ["interest_arts"],
+}
 
 # Short display label for each grade-requirement metric (GRADE_REQUIREMENTS
 # keys use the full formula for the "excluded" reason text; the aspiration
@@ -441,50 +517,113 @@ def build_weekly_schedule(student_answers, attention_subjects):
 
 
 # =====================================================================
-# Priority-boost tie-breakers (STEP 2 signals: interest_programming,
-# interest_languages, prefer_people_over_computer)
+# Ranking matched_majors / aspiration_majors: interest FIRST, grade only
+# as a tie-breaker
 # =====================================================================
-# These 3 signals were dropped from the clustering vector (see scale.py)
-# but still carry real signal for which candidate major within a cluster's
-# already-decided matched/aspiration set to emphasize first. Unlike
-# academic_branch/can_study_private_university_encoded above, they are NOT
-# hard eligibility gates - a high score never adds a major that failed its
-# grade/branch check, and a low score never removes one. They only reorder
-# (move-to-front, stable otherwise) an already-built matched/aspiration
-# list, so matched_majors/aspiration_majors keep their existing shape.
-PRIORITY_BOOST_THRESHOLD = 4  # Likert 1-5; ">= 4" counts as "high"
+# Replaces the older "priority-boost" system (which only moved a major to
+# the front for 3 specific extra signals - interest_programming,
+# interest_languages, prefer_people_over_computer). Now that every
+# candidate major already has its own interest field wired up
+# (MAJOR_INTEREST_FIELDS / the Computer Science-Languages special case
+# above), the natural, complete version of "reorder by interest" is to
+# rank ALL matched/aspiration majors by that same interest score directly,
+# instead of a handful of hardcoded majors.
+#
+# Note this is RANKING only - eligibility (whether a major appears in
+# matched_majors/aspiration_majors at all) is grade+branch only. There is
+# NO minimum interest score required to appear; a student whose interest
+# is low everywhere still gets their comparatively strongest option first,
+# rather than an empty list because nothing cleared some fixed cutoff.
+#
+# Interest is DELIBERATELY the only primary sort key. Interest is a 1-5
+# Likert scale; grade margin (value - threshold) can range far wider (a
+# science_avg can clear its threshold by 20 points). Adding the two
+# together, or using grade as a co-equal factor, would let the grade's
+# much larger numeric range silently dominate the ranking even though
+# interest is supposed to decide it first - so grade margin is used ONLY
+# to break ties between majors with an identical interest score, never to
+# outrank a major the student is more interested in.
+#
+# prefer_people_over_computer is still accepted as a recommend_majors()
+# parameter (kept for API/caller compatibility - api.py still collects and
+# passes it), but no longer affects ordering; Medicine and Law now already
+# have their own direct interest fields (interest_medicine, interest_law)
+# driving ranking, which makes the old prefer_people_over_computer boost
+# redundant. priority_boosts in the return value is repurposed from "which
+# major got boosted to front" into a full ranking explanation - see
+# _ranking_explanations below.
 
 
-def _apply_priority_boosts(majors, interest_programming, interest_languages, prefer_people_over_computer):
-    """majors: matched_majors (list[str]) or aspiration_majors (list[dict]
-    with a "major" key) - both are handled since boosting only moves
-    whichever item names a target major to the front. Returns
-    (reordered_list, boosts_applied), where boosts_applied is
-    [{"major", "reason"}, ...] for transparency - only majors actually
-    present in `majors` produce an entry (boosting a major a cluster
-    doesn't offer is a silent no-op)."""
+def _major_interest_score(major, student_answers, interest_programming, interest_languages):
+    """The Likert interest score(s) relevant to `major`, used only for
+    RANKING matched_majors/aspiration_majors - never for eligibility (see
+    the module note above _rank_majors). Architecture has 2 fields; its
+    score is the MINIMUM of the two (not their average) - see the note
+    above MAJOR_INTEREST_FIELDS for why a weak link shouldn't be maskable
+    by a strong one for a major that genuinely needs both."""
+    if major in MAJOR_INTEREST_FIELDS:
+        fields = MAJOR_INTEREST_FIELDS[major]
+        return min(student_answers[FRIENDLY_TO_COLUMN[f]] for f in fields)
+    if major == "Computer Science":
+        return interest_programming
+    if major == "Languages":
+        return interest_languages
+    raise ValueError(f"No interest field mapped for ranking major {major!r}")
+
+
+def _major_grade_margin(major, metric_values):
+    """value - threshold for majors with a GRADE_REQUIREMENTS entry
+    (positive = comfortably above threshold, negative = an aspiration
+    major's gap); 0.0 for majors with no grade requirement at all
+    (Law/Humanities/Languages/Arts). Tie-break only - see the module note
+    above for why this never outranks interest."""
+    if major not in GRADE_REQUIREMENTS:
+        return 0.0
+    label, threshold = GRADE_REQUIREMENTS[major]
+    return metric_values[label] - threshold
+
+
+def _rank_majors(majors, student_answers, metric_values, interest_programming, interest_languages):
+    """Orders matched_majors (list[str]) or aspiration_majors (list[dict]
+    with a "major" key) so the FIRST entry is the one the student is most
+    genuinely drawn to: sorted by (interest score descending, grade margin
+    descending) - see the module note above for why interest is the only
+    primary key. Ties on both keys keep their original CLUSTER_CANDIDATES
+    order (Python's sort is stable)."""
     def name_of(item):
         return item["major"] if isinstance(item, dict) else item
 
-    reordered = list(majors)
-    boosts_applied = []
+    def sort_key(item):
+        major = name_of(item)
+        interest = _major_interest_score(major, student_answers, interest_programming, interest_languages)
+        margin = _major_grade_margin(major, metric_values)
+        return (-interest, -margin)
 
-    def boost(major, reason):
-        for i, item in enumerate(reordered):
-            if name_of(item) == major:
-                reordered.insert(0, reordered.pop(i))
-                boosts_applied.append({"major": major, "reason": reason})
-                break
+    return sorted(majors, key=sort_key)
 
-    if interest_programming >= PRIORITY_BOOST_THRESHOLD:
-        boost("Computer Science", f"interest_programming >= {PRIORITY_BOOST_THRESHOLD}")
-    if interest_languages >= PRIORITY_BOOST_THRESHOLD:
-        boost("Humanities", f"interest_languages >= {PRIORITY_BOOST_THRESHOLD}")
-    if prefer_people_over_computer >= PRIORITY_BOOST_THRESHOLD:
-        boost("Medicine", f"prefer_people_over_computer >= {PRIORITY_BOOST_THRESHOLD}")
-        boost("Law", f"prefer_people_over_computer >= {PRIORITY_BOOST_THRESHOLD}")
 
-    return reordered, boosts_applied
+def _ranking_explanations(ranked_majors, student_answers, metric_values, interest_programming, interest_languages):
+    """Builds the transparency trail returned as `priority_boosts` -
+    repurposed from the old "which major got boosted to front" list into a
+    full ranking explanation: one entry per major, IN FINAL RANK ORDER,
+    reporting exactly what _rank_majors used to place it there (interest
+    score = the primary key; grade margin = tie-break only, only shown for
+    majors that actually have a GRADE_REQUIREMENTS entry - Law/Humanities/
+    Languages/Arts have none, so their margin is always 0 and omitted here
+    to avoid implying a grade requirement that doesn't exist)."""
+    def name_of(item):
+        return item["major"] if isinstance(item, dict) else item
+
+    explanations = []
+    for rank, item in enumerate(ranked_majors, start=1):
+        major = name_of(item)
+        interest = _major_interest_score(major, student_answers, interest_programming, interest_languages)
+        parts = [f"rank #{rank}", f"interest {interest:.1f}/5"]
+        if major in GRADE_REQUIREMENTS:
+            margin = _major_grade_margin(major, metric_values)
+            parts.append(f"grade margin {margin:+.1f}")
+        explanations.append({"major": major, "reason": ", ".join(parts)})
+    return explanations
 
 
 # Soft informational note (STEP 2 signal: can_study_outside_city). NOT a
@@ -518,9 +657,10 @@ def recommend_majors(
     can_study_outside_city: 0/1 - drives a soft informational note (see
     CAN_STUDY_OUTSIDE_CITY_NOTE) when the student also has an aspiration
     major; never changes eligibility or thresholds.
-    interest_programming, interest_languages, prefer_people_over_computer:
-    Likert 1-5 - priority-boost tie-breakers (see _apply_priority_boosts)
-    that reorder, but never add/remove, matched_majors/aspiration_majors.
+    interest_programming, interest_languages: Likert 1-5 - RANK (never
+    gate) Computer Science/Languages (see MAJOR_INTEREST_FIELDS, _rank_majors).
+    prefer_people_over_computer: Likert 1-5, still accepted but no longer
+    used (see the note above _rank_majors) - kept for caller compatibility.
     exam_stage: one of EXAM_STAGES - "mid_year" (default) or
     "supplementary_round_available" both mean the grades can still
     change, so aspiration_majors/youtube_suggestions/study_schedule work
@@ -534,17 +674,21 @@ def recommend_majors(
     split into:
       - matched_majors: pass every grade and constraint check (borderline
         grades - within BORDERLINE_MARGIN of the threshold - still count
-        as matched), reordered by _apply_priority_boosts.
+        as matched; interest is NOT an eligibility factor - see the module
+        note on MAJOR_INTEREST_FIELDS), ranked by _rank_majors (interest
+        score descending, grade margin as tie-break only).
       - aspiration_majors: excluded ONLY by a grade gap between
         BORDERLINE_MARGIN and ASPIRATION_MARGIN points (a branch/private
         constraint miss is never an aspiration major, no matter the grade),
         AND only when exam_stage is still improvable - always empty when
-        exam_stage="final". Also reordered by _apply_priority_boosts.
+        exam_stage="final". Also ranked by _rank_majors.
     `evaluations` carries the full per-candidate trace (including majors
     dropped entirely, gap > ASPIRATION_MARGIN or a hard constraint) for
-    debugging/transparency. `priority_boosts` records which boosts actually
-    fired. `notes` carries the soft outside-city note when applicable
-    (otherwise an empty list).
+    debugging/transparency. `priority_boosts` explains the final ranking
+    of matched_majors + aspiration_majors, one entry per major in rank
+    order (interest score, grade margin if applicable) - see
+    _ranking_explanations. `notes` carries the soft outside-city note when
+    applicable (otherwise an empty list).
 
     Also returns two advisory add-ons, independent of the major logic
     above: `youtube_suggestions` and `study_schedule`, both driven by
@@ -590,7 +734,7 @@ def recommend_majors(
             )
             continue
 
-        if academic_branch == 2 and major in ("Medicine", "Engineering", "Computer Science"):
+        if academic_branch == 2 and major in ("Medicine", "Engineering", "Architecture", "Computer Science"):
             evaluations.append((major, "excluded", "Literary branch excludes this major"))
             continue
 
@@ -599,6 +743,16 @@ def recommend_majors(
             evaluations.append((major, "excluded", f"{branch_name} branch excludes Medicine"))
             continue
 
+        # NOTE: there is deliberately NO interest-based exclusion here
+        # anymore (there briefly was one - see git history / the module
+        # docstring). Eligibility is grade+branch ONLY. Interest instead
+        # drives ranking exclusively (_rank_majors/_ranking_explanations
+        # below, via MAJOR_INTEREST_FIELDS) - a student whose interest is
+        # low across every subject still needs their genuinely
+        # comparatively-strongest option surfaced first, not an empty
+        # result because nothing cleared some fixed cutoff like 3 or 4.
+        # Excluding on interest would have been actively counterproductive
+        # for exactly the students this tool is meant to help.
         if major not in GRADE_REQUIREMENTS:
             matched_majors.append(major)
             evaluations.append((major, "matched", "no grade requirement"))
@@ -643,18 +797,33 @@ def recommend_majors(
                 (major, "excluded", f"{label} = {value:.1f}, far below required {threshold} (+{gap:.1f})")
             )
 
-    aspiration_majors.sort(key=lambda item: item["gap"])
-
-    # Priority-boost tie-breakers: reorder (never add/remove) matched and
-    # aspiration majors using the 3 interest/preference signals. Applied
-    # AFTER both lists are fully built, per the module docstring.
-    matched_majors, matched_boosts = _apply_priority_boosts(
-        matched_majors, interest_programming, interest_languages, prefer_people_over_computer
+    # Rank both lists by interest first, grade margin only as a tie-break -
+    # see the module note above _rank_majors. Then keep only the top
+    # MAX_DISPLAYED_MAJORS per list - a student doesn't need to see every
+    # eligible major, just their best few. evaluations (above) stays the
+    # FULL trace of every candidate considered, including ones cut here.
+    # also_eligible captures exactly what got cut (still ranked order) -
+    # majors that genuinely passed grade+branch but didn't make the top N,
+    # e.g. a major with real, decent (but not top) interest AND grades
+    # that qualify - so the student knows those options exist too, without
+    # cluttering the main recommendation.
+    matched_ranked = _rank_majors(
+        matched_majors, student_answers, metric_values, interest_programming, interest_languages
     )
-    aspiration_majors, aspiration_boosts = _apply_priority_boosts(
-        aspiration_majors, interest_programming, interest_languages, prefer_people_over_computer
+    aspiration_ranked = _rank_majors(
+        aspiration_majors, student_answers, metric_values, interest_programming, interest_languages
     )
-    priority_boosts = matched_boosts + aspiration_boosts
+    matched_majors = matched_ranked[:MAX_DISPLAYED_MAJORS]
+    aspiration_majors = aspiration_ranked[:MAX_DISPLAYED_MAJORS]
+    also_eligible = {
+        "matched": matched_ranked[MAX_DISPLAYED_MAJORS:],
+        "aspiration": [item["major"] for item in aspiration_ranked[MAX_DISPLAYED_MAJORS:]],
+    }
+    priority_boosts = _ranking_explanations(
+        matched_majors, student_answers, metric_values, interest_programming, interest_languages
+    ) + _ranking_explanations(
+        aspiration_majors, student_answers, metric_values, interest_programming, interest_languages
+    )
 
     # Soft outside-city note: only when there's actually an aspiration gap
     # the student might close by looking beyond their own city/university,
@@ -693,6 +862,7 @@ def recommend_majors(
         "math_grade": math_grade,
         "matched_majors": matched_majors,
         "aspiration_majors": aspiration_majors,
+        "also_eligible": also_eligible,
         "evaluations": evaluations,
         "priority_boosts": priority_boosts,
         "notes": notes,
@@ -791,10 +961,20 @@ def print_report(label, profile, academic_branch, result):
     else:
         print("  (none)")
 
-    print("\nPRIORITY BOOSTS (interest_programming/interest_languages/prefer_people_over_computer tie-breakers):")
+    also = result["also_eligible"]
+    print(f"\nALSO ELIGIBLE (not shown above - passed grade+branch, just outside the top {MAX_DISPLAYED_MAJORS}):")
+    if also["matched"] or also["aspiration"]:
+        if also["matched"]:
+            print(f"  matched: {', '.join(also['matched'])}")
+        if also["aspiration"]:
+            print(f"  aspiration: {', '.join(also['aspiration'])}")
+    else:
+        print("  (none)")
+
+    print("\nRANKING EXPLANATION (why matched/aspiration ended up in this order - interest first, grade margin as tie-break only):")
     if result["priority_boosts"]:
-        for boost in result["priority_boosts"]:
-            print(f"  -> {boost['major']:<17} boosted ({boost['reason']})")
+        for entry in result["priority_boosts"]:
+            print(f"  -> {entry['major']:<17} {entry['reason']}")
     else:
         print("  (none)")
 
@@ -843,6 +1023,7 @@ if __name__ == "__main__":
         physics_grade=90,
         chemistry_grade=88,
         interest_medicine=5,
+        interest_arts = 4, 
         interest_chemistry_biology=5,
         interest_physics_engineering=4,
         enjoy_complex_problems=5,
@@ -850,14 +1031,14 @@ if __name__ == "__main__":
         prefer_people_over_computer=5,
     )
 
-    # --- Student B: low science grades, high humanities interest, literary
-    # branch. interest_languages=4 demonstrates a VISIBLE boost: Humanities
-    # moves ahead of Law in matched_majors. math_grade=50 (Economics needs
-    # 60, gap=10, within ASPIRATION_MARGIN) plus can_study_outside_city=1
-    # demonstrates the soft outside-city note. ---
+    # # --- Student B: low science grades, high humanities interest, literary
+    # # branch. interest_languages=4 demonstrates a VISIBLE boost: Humanities
+    # # moves ahead of Law in matched_majors. math_grade=50 (Economics needs
+    # # 60, gap=10, within ASPIRATION_MARGIN) plus can_study_outside_city=1
+    # # demonstrates the soft outside-city note. ---
     b_answers, b_branch, b_signals, b_profile = make_student(
         academic_branch=2,
-        math_grade=50,
+        math_grade=80,
         physics_grade=40,
         chemistry_grade=48,
         arabic_grade=85,
@@ -869,37 +1050,79 @@ if __name__ == "__main__":
         can_study_outside_city=1,
     )
 
-    # --- Student C: medium grades, high CS interest, scientific branch.
-    # interest_programming=4 demonstrates a VISIBLE boost: Computer Science
-    # moves to the front of matched_majors, ahead of Medicine/Engineering.
-    # can_study_outside_city=0 shows aspiration majors WITHOUT the soft note
-    # (contrast with Student B). exam_stage="mid_year" (default) - still
-    # improvable, so Medicine/Engineering show up as aspiration_majors with
-    # youtube/schedule help. ---
+    # # --- Student C: medium grades, high CS interest, scientific branch.
+    # # interest_programming=4 demonstrates a VISIBLE boost: Computer Science
+    # # moves to the front of matched_majors, ahead of Medicine/Engineering.
+    # # can_study_outside_city=0 shows aspiration majors WITHOUT the soft note
+    # # (contrast with Student B). exam_stage="mid_year" (default) - still
+    # # improvable, so Medicine/Engineering show up as aspiration_majors with
+    # # youtube/schedule help. ---
     c_answers, c_branch, c_signals, c_profile = make_student(
         academic_branch=1,
-        math_grade=68,
-        physics_grade=65,
+        math_grade=88,
+        physics_grade=85,
         chemistry_grade=67,
         interest_math=4,
+        interest_arts =4,
         interest_programming=4,
+        interest_physics_engineering=5,
         can_study_private_university_encoded=1.0,
         can_study_outside_city=0,
     )
 
-    # --- Student D: SAME profile as Student C, but exam_stage="final" -
-    # grades are locked (no supplementary round left). Medicine/Engineering
-    # should now show up EXCLUDED (not aspiration), and youtube_suggestions/
-    # study_schedule should both be empty/not_applicable - nothing left to
-    # advise on for a grade that can no longer change. The Computer Science
-    # boost still applies (it's independent of exam_stage).
+    # # --- Student D: SAME profile as Student C, but exam_stage="final" -
+    # # grades are locked (no supplementary round left). Medicine/Engineering
+    # # should now show up EXCLUDED (not aspiration), and youtube_suggestions/
+    # # study_schedule should both be empty/not_applicable - nothing left to
+    # # advise on for a grade that can no longer change. The Computer Science
+    # # boost still applies (it's independent of exam_stage).
     d_answers, d_branch, d_signals, d_profile = c_answers, c_branch, c_signals, c_profile
+
+    # --- Student E: capstone demo for everything added in this round -
+    # Architecture, Languages, and the interest-first/grade-tie-break
+    # ranking (with NO minimum interest cutoff - see the module note above
+    # _rank_majors). Interests are deliberately low-to-mid across the
+    # board (2-4, nothing at the old "high" bar of 4-5 except interest_arts)
+    # to demonstrate the exact case that motivated dropping the hard
+    # interest gate: a student who isn't strongly pulled toward any one
+    # thing should still get a fully ranked list, not an empty one.
+    # Expected matched order: Arts(4.0) > Architecture(3.5, avg of
+    # interest_physics_engineering=3 + interest_arts=4) > Languages(3.0,
+    # margin 0) > Engineering(3.0, borderline margin -1.7) > Economics(2.0,
+    # margin +25) > Computer Science(2.0, margin +15) > Law(2.0, margin 0)
+    # > Humanities(2.0, margin 0) - interest strictly decides each tier,
+    # grade margin only breaks the ties WITHIN a tier (see Languages
+    # ranking ahead of Engineering despite an identical interest score of
+    # 3, purely because Languages has no grade requirement to fall short
+    # of). Medicine (interest=2, lowest, AND science_avg=73.3 short of the
+    # 80 requirement by 6.7) becomes an ASPIRATION major rather than being
+    # excluded outright for low interest - it's still shown, just last. ---
+    e_answers, e_branch, e_signals, e_profile = make_student(
+        academic_branch=1,
+        math_grade=85,
+        physics_grade=70,
+        chemistry_grade=65,
+        interest_physics_engineering=3,
+        interest_arts=4,
+        interest_medicine=2,
+        interest_law=2,
+        interest_humanities=2,
+        interest_economics=2,
+        interest_chemistry_biology=2,
+        interest_math=3,
+        can_study_private_university_encoded=1.0,
+        can_study_outside_city=1,
+        interest_programming=2,
+        interest_languages=3,
+        prefer_people_over_computer=2,
+    )
 
     for label, answers, branch, signals, profile, exam_stage in [
         ("Student A", a_answers, a_branch, a_signals, a_profile, "mid_year"),
         ("Student B", b_answers, b_branch, b_signals, b_profile, "mid_year"),
         ("Student C", c_answers, c_branch, c_signals, c_profile, "mid_year"),
         ("Student D (= C, but exam_stage=final)", d_answers, d_branch, d_signals, d_profile, "final"),
+        ("Student E (capstone: Architecture/Languages/ranking)", e_answers, e_branch, e_signals, e_profile, "mid_year"),
     ]:
         result = recommend_majors(answers, branch, **signals, exam_stage=exam_stage)
         print_report(label, profile, branch, result)

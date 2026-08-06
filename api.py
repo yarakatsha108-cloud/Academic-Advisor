@@ -22,7 +22,14 @@ FastAPI wrapper around the recommendation logic in recommend.py.
   parameters instead of being folded into student_answers, since they
   drive priority-boost/soft-note rules rather than clustering.
 - ADDED: priority_boosts and notes fields, mirroring recommend_majors()'s
-  new priority-boost tie-breakers and soft outside-city note.
+  new priority-boost tie-breakers and soft outside-city note. priority_boosts
+  is now a full ranking explanation (interest score + grade margin per
+  major, in rank order), not just "which major got boosted to front".
+- ADDED: also_eligible field - matched_majors/aspiration_majors are each
+  capped to the top MAX_DISPLAYED_MAJORS (3) by recommend.py; also_eligible
+  lists the names of majors that passed grade+branch but didn't make that
+  cut, so the client can still surface "other options exist" without
+  cluttering the main recommendation.
 """
 
 from typing import Literal, Optional
@@ -103,6 +110,11 @@ class PriorityBoost(BaseModel):
     reason: str
 
 
+class AlsoEligible(BaseModel):
+    matched: list[str]
+    aspiration: list[str]
+
+
 class Evaluation(BaseModel):
     major: str
     status: str
@@ -142,6 +154,7 @@ class RecommendResponse(BaseModel):
     science_avg: float
     matched_majors: list[str]
     aspiration_majors: list[AspirationMajor]
+    also_eligible: AlsoEligible
     evaluations: list[Evaluation]
     priority_boosts: list[PriorityBoost]
     notes: list[str]
@@ -193,6 +206,7 @@ def recommend(student: StudentRequest):
             )
             for item in result["aspiration_majors"]
         ],
+        also_eligible=AlsoEligible(**result["also_eligible"]),
         evaluations=[
             Evaluation(major=major, status=status, reason=reason)
             for major, status, reason in result["evaluations"]
