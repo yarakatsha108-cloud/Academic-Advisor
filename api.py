@@ -152,6 +152,7 @@ class RecommendResponse(BaseModel):
     cluster_name: str
     exam_stage: str
     science_avg: float
+    total_avg: float
     matched_majors: list[str]
     aspiration_majors: list[AspirationMajor]
     also_eligible: AlsoEligible
@@ -196,6 +197,7 @@ def recommend(student: StudentRequest):
         exam_stage=result["exam_stage"],
         cluster_name=result["cluster_name"],
         science_avg=result["science_avg"],
+        total_avg=result["total_avg"],
         matched_majors=result["matched_majors"],
         aspiration_majors=[
             AspirationMajor(

@@ -130,20 +130,50 @@ CLUSTER_CANDIDATES = {
     0: ["Law", "Humanities", "Languages", "Economics", "Arts"],
 }
 
-# (requirement label, threshold) - checked against science_avg or math_grade
-# below. Law/Humanities/Languages/Arts have no grade requirement and are
-# absent here.
+# (requirement label, threshold) - checked against total_avg below.
+# Law/Humanities/Languages/Arts have no grade requirement and are absent
+# here.
+#
+# UPDATED to use total_avg (all 5 collected subjects: math, physics,
+# chemistry, arabic, foreign language) instead of the old science_avg
+# (math+physics+chemistry only) or bare math_grade. Real Syrian university
+# admission ("مفاضلة") is decided by a student's TOTAL baccalaureate score
+# across ALL subjects (out of 2400), not an isolated 2-3 subject slice -
+# using only science_avg was a structural mismatch with how admission
+# actually works, not just a threshold-value problem. This survey still
+# only collects 5 of the ~12 real bakalorya subjects, so total_avg (5
+# subjects) is the closest available approximation of the real total, not
+# an exact match.
+#
+# Thresholds sourced from 2025-2026 Syrian admission data (see chat -
+# search results, sy-24.com / toiall.com / elnatiga.com), converted from
+# "X/2400" to a 0-100 percentage to match this survey's grade scale:
+#   - Medicine: real cutoff ~2200/2400 = 91.7% -> 92
+#   - Engineering: real range ~2000-2100/2400 = 83.3%-87.5% -> using the
+#     LOWER bound, 83 (a mid-competitiveness engineering program; more
+#     selective ones go higher than this floor)
+#   - Computer Science: no dedicated citation found for "Computer
+#     Science" specifically - reusing the Informatics Engineering public-
+#     university estimate (~80-85%) as the closest available proxy -> 82.
+#     LOWER CONFIDENCE than Medicine/Engineering - flag if you find a
+#     better source.
+#   - Economics: UNCHANGED at 60 for now. A number was found (literary
+#     institutes bucket covering media/tourism/management/economics
+#     together, ~1000-1200/2400 = 41.7%-50%), but it's not clearly the
+#     actual "كلية الاقتصاد" college-level cutoff (could be a lower
+#     institute/diploma tier) - not confident enough to replace 60 with
+#     it. Needs a better source before updating.
 GRADE_REQUIREMENTS = {
-    "Medicine": ("science_avg (math+physics+chemistry)/3", 80),
-    "Engineering": ("science_avg (math+physics+chemistry)/3", 75),
-    # Architecture reuses Engineering's exact threshold (75) rather than a
-    # separate invented number - no real Syrian admission data exists here
-    # to justify a different cutoff. What actually distinguishes Architecture
+    "Medicine": ("total_avg (5 subjects)/5", 92),
+    "Engineering": ("total_avg (5 subjects)/5", 83),
+    # Architecture reuses Engineering's threshold rather than a separate
+    # invented number - same rationale as before, just against the new
+    # real Engineering figure. What actually distinguishes Architecture
     # from Engineering is the interest gate below (MAJOR_INTEREST_FIELDS),
     # not the grade requirement.
-    "Architecture": ("science_avg (math+physics+chemistry)/3", 75),
-    "Computer Science": ("math grade", 70),
-    "Economics": ("math grade", 60),
+    "Architecture": ("total_avg (5 subjects)/5", 83),
+    "Computer Science": ("total_avg (5 subjects)/5", 82),
+    "Economics": ("total_avg (5 subjects)/5", 60),
 }
 
 # A grade up to this many points below the threshold is "borderline" -
@@ -200,19 +230,18 @@ MAJOR_INTEREST_FIELDS = {
 # keys use the full formula for the "excluded" reason text; the aspiration
 # report is more compact).
 SHORT_METRIC_LABEL = {
-    "science_avg (math+physics+chemistry)/3": "science_avg",
-    "math grade": "math grade",
+    "total_avg (5 subjects)/5": "total_avg",
 }
 
 # Reverse of SHORT_METRIC_LABEL, but pointing to which raw subject columns
 # feed each aspiration-major metric. Used to flag "this subject is holding
 # back an aspiration major" even when the subject's own grade is above
 # WEAK_GRADE_THRESHOLD - e.g. physics=65 isn't "weak" on its own, but if
-# it's part of a science_avg that's blocking an aspiration major, it's
-# still worth flagging.
+# it's part of a total_avg that's blocking an aspiration major, it's still
+# worth flagging. Now covers all 5 subjects (was just the 3 science ones)
+# since total_avg is computed from all 5.
 SHORT_METRIC_TO_SUBJECTS = {
-    "science_avg": {"math_grade", "physics_grade", "chemistry_grade"},
-    "math grade": {"math_grade"},
+    "total_avg": {"math_grade", "physics_grade", "chemistry_grade", "arabic_grade", "foreign_language_grade"},
 }
 
 BRANCH_NAMES = {1: "Scientific", 2: "Literary", 3: "Commercial", 4: "Vocational", 5: "Industrial"}
@@ -712,12 +741,19 @@ def recommend_majors(
     math_grade = student_answers[FRIENDLY_TO_COLUMN["math_grade"]]
     physics_grade = student_answers[FRIENDLY_TO_COLUMN["physics_grade"]]
     chemistry_grade = student_answers[FRIENDLY_TO_COLUMN["chemistry_grade"]]
+    arabic_grade = student_answers[FRIENDLY_TO_COLUMN["arabic_grade"]]
+    foreign_language_grade = student_answers[FRIENDLY_TO_COLUMN["foreign_language_grade"]]
+    # science_avg kept as an informational/display figure only (see the
+    # returned dict) - total_avg (all 5 collected subjects) is what
+    # actually drives GRADE_REQUIREMENTS now, since real Syrian admission
+    # is decided by the TOTAL baccalaureate score, not a 3-subject slice -
+    # see the note above GRADE_REQUIREMENTS.
     science_avg = (math_grade + physics_grade + chemistry_grade) / 3
+    total_avg = (math_grade + physics_grade + chemistry_grade + arabic_grade + foreign_language_grade) / 5
     can_study_private = can_study_private_university_encoded
 
     metric_values = {
-        "science_avg (math+physics+chemistry)/3": science_avg,
-        "math grade": math_grade,
+        "total_avg (5 subjects)/5": total_avg,
     }
 
     matched_majors = []
@@ -859,6 +895,7 @@ def recommend_majors(
         "cluster": cluster_id,
         "cluster_name": CLUSTER_NAMES.get(cluster_id, f"Cluster {cluster_id}"),
         "science_avg": round(science_avg, 1),
+        "total_avg": round(total_avg, 1),
         "math_grade": math_grade,
         "matched_majors": matched_majors,
         "aspiration_majors": aspiration_majors,
@@ -938,7 +975,8 @@ def print_report(label, profile, academic_branch, result):
           f"can_study_outside_city: {profile['can_study_outside_city']}")
 
     print(f"\nAssigned cluster: {result['cluster']} ({result['cluster_name']})  |  exam_stage: {result['exam_stage']}")
-    print(f"science_avg = {result['science_avg']}, math_grade = {result['math_grade']}")
+    print(f"total_avg (5 subjects, drives eligibility) = {result['total_avg']}  |  "
+          f"science_avg (3 subjects, informational only) = {result['science_avg']}")
 
     print("\nCandidate evaluation:")
     for major, status, reason in result["evaluations"]:
