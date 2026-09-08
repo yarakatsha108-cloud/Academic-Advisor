@@ -74,7 +74,6 @@ Academic-Advisor/
 ├── api.py                          # FastAPI wrapper around recommend.py
 ├── laravel-backend/                # Drop-in Laravel controllers/models/migrations
 │   └── README.md                   # Setup instructions for the backend
-├── دليل_بناء_الباك_اند_Laravel.md   # Full Laravel integration guide (Arabic)
 └── *.png / *.csv                   # Generated charts and intermediate data
 ```
 
