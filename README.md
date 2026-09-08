@@ -99,7 +99,6 @@ uvicorn api:app --reload --port 8000
 
 `scaler.pkl`, `kmeans_model.pkl`, and `feature_columns.pkl` are already included, pre-fitted — `recommend.py` and `api.py` both work out of the box without re-running the pipeline.
 
-The Laravel backend (`laravel-backend/`) is a drop-in set of files for a fresh Laravel project — see `laravel-backend/README.md` for the copy-in steps and `دليل_بناء_الباك_اند_Laravel.md` for the full setup guide.
 
 ## Data
 
